@@ -144,7 +144,9 @@ def bld_atac_mtx(
         X=cell_mat,
         obs=pd.DataFrame(index=cells),
         var=feature_df,
+        dtype=int,
     )
+    adata = adata[sorted(cells), :].copy()
     adata.write_h5ad(output_file_path)
 
     return adata
