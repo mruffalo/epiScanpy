@@ -1,20 +1,50 @@
+from collections import defaultdict
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, Dict, List, Optional
 
+import anndata
 import anndata as ad
 import bamnostic as bs
 import numpy as np
 import pandas as pd
-from scipy.sparse import csr_matrix
+import scipy.sparse
+from bx.intervals import Interval, IntervalTree
 
 MOUSE = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19',
         '2', '3', '4', '5', '6', '7', '8', '9','X', 'Y']
 HUMAN = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22',
         '2', '3', '4', '5', '6', '7', '8', '9','X', 'Y']
 
-def bld_atac_mtx(bam_files: List[Path], loaded_feat, output_file_path: Optional[Path] = None,
-    writing_option='a', header=None, mode='rb',
-    check_sq=True, chromosomes=HUMAN):
+def get_barcode_from_read(bam_file: Path, read: bs.AlignedSegment, barcode_tag: str = 'CB'):
+    return read.get_tag(barcode_tag)
+
+def get_barcode_from_bam_filename(bam_file: Path, read: bs.AlignedSegment, barcode_tag: str):
+    return bam_file.stem
+
+def get_feature_df(chromosomes: List[str], loaded_feat: Dict[str, List[List[int]]]) -> pd.DataFrame:
+    feature_dfs = []
+    for chrom in chromosomes:
+        features = loaded_feat[chrom]
+        chroms = [chrom] * len(features)
+        index = []
+        starts = []
+        ends = []
+        for start, end in features:
+            index.append(f'{chrom}:{start}-{end}')
+            starts.append(start)
+            ends.append(end)
+        feature_dfs.append(pd.DataFrame({'chrom': chroms, 'start': starts, 'end': ends}, index=index))
+    return pd.concat(feature_dfs)
+
+def bld_atac_mtx(
+    bam_files: List[Path],
+    loaded_feat: Dict[str, List[List[int]]],
+    output_file_path: Optional[Path] = None,
+    check_sq=True,
+    chromosomes=HUMAN,
+    cb_tag='CB',
+    barcode_func: Callable[[Path, bs.AlignedSegment, str], str] = get_barcode_from_bam_filename,
+) -> anndata.AnnData:
     """
     Build a count matrix one set of features at a time. It is specific of ATAC-seq data.
     It curently do not write down a sparse matrix. It writes down a regular count matrix
@@ -64,86 +94,60 @@ def bld_atac_mtx(bam_files: List[Path], loaded_feat, output_file_path: Optional[
     """
 
     if output_file_path is None:
-        output_file_path = Path('std_output_ct_mtx.txt')
+        output_file_path = Path('std_output_ct_mtx.h5ad')
 
-    # open file to write
-    with open(output_file_path, writing_option) as output_file:
-        # write header if specified
-        if header is not None:
-            output_file.write('sample_name\t')
-            for feature in header:
-                output_file.write(feature)
-                output_file.write('\t')
-            output_file.write('\n')
+    chrom_overlap = set(chromosomes) & set(loaded_feat)
+    feature_df = get_feature_df(chromosomes, loaded_feat)
+
+    # Maps chromosome names to interval trees, with tree values as indexes
+    # into the feature list for each chromosome; these indexes are used to
+    # count reads falling into each feature
+    trees: Dict[str, IntervalTree] = {}
+    for chrom in chrom_overlap:
+        tree = IntervalTree()
+        for i, (start, stop) in enumerate(loaded_feat[chrom]):
+            tree.insert_interval(Interval(start, stop, value=i))
+        trees[chrom] = tree
+
+    def get_feature_vectors():
+        return {key: np.zeros(len(loaded_feat[key]), dtype=int) for key in chromosomes}
+
+    cell_feature_counts = defaultdict(get_feature_vectors)
 
     # start going through the bam files
     for bam_file in bam_files:
-
-        ## important variables for output
-        index_feat = {key: 0 for key in chromosomes}
-        val_feat = {key: [0 for x in range(len(loaded_feat[key]))] for key in chromosomes}
-
-        ## PART 1 read the bam file
-        keep_lines = []
-        #samfile = bs.AlignmentFile(path+output_file_name, mode="rb", check_sq=False)
-        samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=False)
-        #for read in samfile.fetch(until_eof=True):
+        samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
         for read in samfile:
-            line = str(read).split('\t')
-            if line[2][3:] in chromosomes:
-                keep_lines.append(line[2:4])
-            ### print -- output
-        print(bam_file, len(keep_lines), 'mapped reads')
-        samfile.close()
+            chrom = read.reference_name.removeprefix('chr')
+            if chrom not in trees:
+                continue
+            start, end = read.pos, read.pos + read.query_length
+            barcode = barcode_func(bam_file, read, cb_tag)
+            chrom_counts = cell_feature_counts[barcode]
+            for interval in trees[chrom].find(start, end):
+                chrom_counts[chrom][interval.value] += 1
 
-        ## PART2 reads that fall into
-        for element in keep_lines:
-            ## 2 things per line:
-            chrom = element[0][3:]
-            read_pos = int(element[1])
-            max_value_index = len(loaded_feat[chrom])
-            ## I want to check if the read map to a feature in the same chrom
-            pointer_feat_pos = index_feat[chrom]
-            for feat_pos in loaded_feat[chrom][pointer_feat_pos:]:
-                pointer_feat_pos += 1
-                # Go through all features that are smaller than the read position
-                if read_pos > feat_pos[1]:
-                    continue
-                # if read_pos fall in a feature
-                elif read_pos > feat_pos[0]:
-                    # Update the pointer for the next read if the pointer isn't out of range
-                    if pointer_feat_pos < max_value_index:
-                        index_feat[chrom] = pointer_feat_pos
-                        val_feat[chrom][pointer_feat_pos] += 1
-                    else:
-                        index_feat[chrom] = max_value_index
-                    # Check the following features without updating the pointer.
-                    break
-                else:
-                    break
+    cells = []
+    cell_vecs = []
+    for cell, feature_counts in cell_feature_counts.items():
+        # Dict ordering is stable, but be explicit in matching the ordering in feature_df
+        cell_vec_chunks = []
+        for chrom in chromosomes:
+            cell_vec_chunks.append(feature_counts[chrom])
+        cell_vec = scipy.sparse.hstack(cell_vec_chunks)
+        cells.append(cell)
+        cell_vecs.append(cell_vec)
 
-            for feat_pos in loaded_feat[chrom][pointer_feat_pos:]:
-                # +1 if reads fall into more than one feature
-                if feat_pos[0] < read_pos:
-                    val_feat[chrom][pointer_feat_pos] += 1
-                    pointer_feat_pos += 1
-                # if read_pos > start position of the new feature break
-                elif read_pos < feat_pos[0]:
-                    break
-                else:
-                    print('error')
-                    break
+    cell_mat = scipy.sparse.csr_matrix(scipy.sparse.vstack(cell_vecs))
 
-        # PART 3
-        # open
-        with open(output_file_path, 'a') as output_file:
-            # write down the result of the cell
-            output_file.write(bam_file.name)
-            output_file.write('\t')
-            for chrom in chromosomes:
-                output_file.write('\t'.join([str(p) for p in val_feat[chrom]]))
-                output_file.write('\t')
-            output_file.write('\n')
+    adata = anndata.AnnData(
+        X=cell_mat,
+        obs=pd.DataFrame(index=cells),
+        var=feature_df,
+    )
+    adata.write_h5ad(output_file_path)
+
+    return adata
 
 def read_mtx_bed(file_name, path='', omic='ATAC'):
     """
@@ -236,7 +240,7 @@ def save_sparse_mtx(initial_matrix, output_file='.h5ad', path='', omic='ATAC', b
         # convert into an AnnData object
         if head is not None:
             anndata_kwargs['var'] = pd.DataFrame(index=head[1:])
-        adata = ad.AnnData(csr_matrix(data), obs=pd.DataFrame(index=cell_names), **anndata_kwargs)
+        adata = ad.AnnData(scipy.sparse.csr_matrix(data), obs=pd.DataFrame(index=cell_names), **anndata_kwargs)
 
         if omic is not None:
             adata.uns['omic'] = omic
