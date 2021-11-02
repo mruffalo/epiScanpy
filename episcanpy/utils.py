@@ -879,3 +879,21 @@ def hierarch_cluster(M):
         pl.matshow(Mclus)
         pl.colorbar()
     return Mclus, indices
+
+def removeprefix(string: str, prefix: str) -> str:
+    """
+    Remove prefix of a string. Backport (in spirit) from Python 3.9.
+
+    Parameters
+    ----------
+    string : str
+        string to strip prefix from
+    prefix : str
+        prefix to remove
+
+    Returns
+    -------
+    string with prefix removed
+    """
+    if string.startswith(prefix):
+        return string[len(prefix):]

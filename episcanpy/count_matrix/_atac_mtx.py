@@ -10,6 +10,8 @@ import pandas as pd
 import scipy.sparse
 from bx.intervals import Interval, IntervalTree
 
+from ..utils import removeprefix
+
 MOUSE = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19',
         '2', '3', '4', '5', '6', '7', '8', '9','X', 'Y']
 HUMAN = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22',
@@ -118,7 +120,7 @@ def bld_atac_mtx(
     for bam_file in bam_files:
         samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
         for read in samfile:
-            chrom = read.reference_name.removeprefix('chr')
+            chrom = removeprefix(read.reference_name, 'chr')
             if chrom not in trees:
                 continue
             start, end = read.pos, read.pos + read.query_length
