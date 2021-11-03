@@ -49,6 +49,7 @@ class BarcodeIndexDict(dict):
         self.barcodes = []
 
     def __missing__(self, key):
+        self.barcodes.append(key)
         count = len(self)
         self[key] = count
         return count
