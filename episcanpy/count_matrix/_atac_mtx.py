@@ -123,17 +123,20 @@ def bld_atac_mtx(
     # second pass: count reads mapping to each interval
     for bam_file in bam_files:
         samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
-        for read in samfile:
-            chrom = removeprefix(read.reference_name, 'chr')
-            if chrom not in trees:
-                continue
-            start, end = read.pos, read.pos + read.query_length
-            barcode = get_barcode_from_read(bam_file, read, cb_tag)
+        try:
+            for read in samfile:
+                chrom = removeprefix(read.reference_name, 'chr')
+                if chrom not in trees:
+                    continue
+                start, end = read.pos, read.pos + read.query_length
+                barcode = get_barcode_from_read(bam_file, read, cb_tag)
 
-            barcode_index = barcode_mapping[barcode]
-            for interval in trees[chrom].find(start, end):
-                feature_index = interval.value
-                count_matrix[barcode_index, feature_index] += 1
+                barcode_index = barcode_mapping[barcode]
+                for interval in trees[chrom].find(start, end):
+                    feature_index = interval.value
+                    count_matrix[barcode_index, feature_index] += 1
+        except OSError as e:
+            print('Caught:', e)
 
     adata = anndata.AnnData(
         X=scipy.sparse.csr_matrix(count_matrix),
