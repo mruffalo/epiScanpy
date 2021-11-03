@@ -98,7 +98,7 @@ def bld_atac_mtx(
         output_file_path = Path('std_output_ct_mtx.h5ad')
 
     chrom_overlap = set(chromosomes) & set(loaded_feat)
-    feature_df = get_feature_df(chromosomes, loaded_feat)
+    feature_df = get_feature_df(chrom_overlap, loaded_feat)
 
     # Maps chromosome names to interval trees, with tree values as indexes
     # into the feature list for each chromosome; these indexes are used to
@@ -112,9 +112,12 @@ def bld_atac_mtx(
     barcode_set = set()
     for bam_file in bam_files:
         samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
-        for read in samfile:
-            barcode = get_barcode_from_read(bam_file, read, cb_tag)
-            barcode_set.add(barcode)
+        try:
+            for read in samfile:
+                barcode = get_barcode_from_read(bam_file, read, cb_tag)
+                barcode_set.add(barcode)
+        except OSError as e:
+            print('Caught:', e)
     barcodes = sorted(barcode_set)
     barcode_mapping = {barcode: i for i, barcode in enumerate(barcodes)}
 
