@@ -45,7 +45,6 @@ def bld_atac_mtx(
     check_sq=True,
     chromosomes=HUMAN,
     cb_tag='CB',
-    barcode_func: Callable[[Path, bs.AlignedSegment, str], str] = get_barcode_from_bam_filename,
 ) -> anndata.AnnData:
     """
     Build a count matrix one set of features at a time. It is specific of ATAC-seq data.
@@ -104,19 +103,24 @@ def bld_atac_mtx(
     # Maps chromosome names to interval trees, with tree values as indexes
     # into the feature list for each chromosome; these indexes are used to
     # count reads falling into each feature
-    trees: Dict[str, IntervalTree] = {}
-    for chrom in chrom_overlap:
-        tree = IntervalTree()
-        for i, (start, stop) in enumerate(loaded_feat[chrom]):
-            tree.insert_interval(Interval(start, stop, value=i))
-        trees[chrom] = tree
+    trees: Dict[str, IntervalTree] = defaultdict(IntervalTree)
 
-    def get_feature_vectors():
-        return {key: np.zeros(len(loaded_feat[key]), dtype=int) for key in chromosomes}
+    for ind, (i, row) in enumerate(feature_df.iterrows()):
+        trees[row.chrom].insert_interval(Interval(row.start, row.end, value=ind))
 
-    cell_feature_counts = defaultdict(get_feature_vectors)
+    # first pass: collect all barcodes
+    barcode_set = set()
+    for bam_file in bam_files:
+        samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
+        for read in samfile:
+            barcode = get_barcode_from_read(bam_file, read, cb_tag)
+            barcode_set.add(barcode)
+    barcodes = sorted(barcode_set)
+    barcode_mapping = {barcode: i for i, barcode in enumerate(barcodes)}
 
-    # start going through the bam files
+    count_matrix = scipy.sparse.dok_matrix((len(barcodes), feature_df.shape[0]), dtype=np.uint)
+
+    # second pass: count reads mapping to each interval
     for bam_file in bam_files:
         samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
         for read in samfile:
@@ -124,31 +128,19 @@ def bld_atac_mtx(
             if chrom not in trees:
                 continue
             start, end = read.pos, read.pos + read.query_length
-            barcode = barcode_func(bam_file, read, cb_tag)
-            chrom_counts = cell_feature_counts[barcode]
+            barcode = get_barcode_from_read(bam_file, read, cb_tag)
+
+            barcode_index = barcode_mapping[barcode]
             for interval in trees[chrom].find(start, end):
-                chrom_counts[chrom][interval.value] += 1
-
-    cells = []
-    cell_vecs = []
-    for cell, feature_counts in cell_feature_counts.items():
-        # Dict ordering is stable, but be explicit in matching the ordering in feature_df
-        cell_vec_chunks = []
-        for chrom in chromosomes:
-            cell_vec_chunks.append(feature_counts[chrom])
-        cell_vec = scipy.sparse.hstack(cell_vec_chunks)
-        cells.append(cell)
-        cell_vecs.append(cell_vec)
-
-    cell_mat = scipy.sparse.csr_matrix(scipy.sparse.vstack(cell_vecs))
+                feature_index = interval.value
+                count_matrix[barcode_index, feature_index] += 1
 
     adata = anndata.AnnData(
-        X=cell_mat,
-        obs=pd.DataFrame(index=cells),
+        X=scipy.sparse.csr_matrix(count_matrix),
+        obs=pd.DataFrame(index=barcodes),
         var=feature_df,
-        dtype=int,
+        dtype=np.uint,
     )
-    adata = adata[sorted(cells), :].copy()
     adata.write_h5ad(output_file_path)
 
     return adata
