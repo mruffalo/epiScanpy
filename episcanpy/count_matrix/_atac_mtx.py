@@ -1,6 +1,7 @@
+import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import anndata
 import anndata as ad
@@ -16,6 +17,8 @@ MOUSE = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19',
         '2', '3', '4', '5', '6', '7', '8', '9','X', 'Y']
 HUMAN = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22',
         '2', '3', '4', '5', '6', '7', '8', '9','X', 'Y']
+
+logger = logging.getLogger('epi.ct.atac_mtx')
 
 def get_barcode_from_read(bam_file: Path, read: bs.AlignedSegment, barcode_tag: str = 'CB'):
     return read.get_tag(barcode_tag)
@@ -97,27 +100,29 @@ def bld_atac_mtx(
     if output_file_path is None:
         output_file_path = Path('std_output_ct_mtx.h5ad')
 
-    chrom_overlap = set(chromosomes) & set(loaded_feat)
-    feature_df = get_feature_df(chrom_overlap, loaded_feat)
+    feature_df = get_feature_df(chromosomes, loaded_feat)
 
     # Maps chromosome names to interval trees, with tree values as indexes
     # into the feature list for each chromosome; these indexes are used to
     # count reads falling into each feature
     trees: Dict[str, IntervalTree] = defaultdict(IntervalTree)
 
+    logger.debug('Constructing interval trees for features')
     for ind, (i, row) in enumerate(feature_df.iterrows()):
         trees[row.chrom].insert_interval(Interval(row.start, row.end, value=ind))
 
     # first pass: collect all barcodes
     barcode_set = set()
     for bam_file in bam_files:
+        logger.debug('Reading barcodes in BAM file %s', bam_file)
         samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
         try:
             for read in samfile:
                 barcode = get_barcode_from_read(bam_file, read, cb_tag)
                 barcode_set.add(barcode)
         except OSError as e:
-            print('Caught:', e)
+            logger.debug('Caught exception while reading barcodes')
+    logger.debug('Read %d barcodes', len(barcode_set))
     barcodes = sorted(barcode_set)
     barcode_mapping = {barcode: i for i, barcode in enumerate(barcodes)}
 
@@ -125,6 +130,7 @@ def bld_atac_mtx(
 
     # second pass: count reads mapping to each interval
     for bam_file in bam_files:
+        logger.debug('Mapping reads from BAM file %s to features', bam_file)
         samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
         try:
             for read in samfile:
@@ -139,7 +145,9 @@ def bld_atac_mtx(
                     feature_index = interval.value
                     count_matrix[barcode_index, feature_index] += 1
         except OSError as e:
-            print('Caught:', e)
+            logger.exception('Caught exception while mapping reads to features')
+
+    logger.debug('Done mapping reads, building AnnData object')
 
     adata = anndata.AnnData(
         X=scipy.sparse.csr_matrix(count_matrix),
