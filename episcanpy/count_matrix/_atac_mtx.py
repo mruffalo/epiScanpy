@@ -41,6 +41,18 @@ def get_feature_df(chromosomes: List[str], loaded_feat: Dict[str, List[List[int]
         feature_dfs.append(pd.DataFrame({'chrom': chroms, 'start': starts, 'end': ends}, index=index))
     return pd.concat(feature_dfs)
 
+class BarcodeIndexDict(dict):
+    barcodes: List[str]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.barcodes = []
+
+    def __missing__(self, key):
+        count = len(self)
+        self[key] = count
+        return count
+
 def bld_atac_mtx(
     bam_files: List[Path],
     loaded_feat: Dict[str, List[List[int]]],
@@ -111,24 +123,11 @@ def bld_atac_mtx(
     for ind, (i, row) in enumerate(feature_df.iterrows()):
         trees[row.chrom].insert_interval(Interval(row.start, row.end, value=ind))
 
-    # first pass: collect all barcodes
-    barcode_set = set()
-    for bam_file in bam_files:
-        logger.debug('Reading barcodes in BAM file %s', bam_file)
-        samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
-        try:
-            for read in samfile:
-                barcode = get_barcode_from_read(bam_file, read, cb_tag)
-                barcode_set.add(barcode)
-        except OSError as e:
-            logger.debug('Caught exception while reading barcodes')
-    logger.debug('Read %d barcodes', len(barcode_set))
-    barcodes = sorted(barcode_set)
-    barcode_mapping = {barcode: i for i, barcode in enumerate(barcodes)}
+    barcode_indexes = BarcodeIndexDict()
 
-    count_matrix = scipy.sparse.dok_matrix((len(barcodes), feature_df.shape[0]), dtype=np.uint)
+    rows = []
+    columns = []
 
-    # second pass: count reads mapping to each interval
     for bam_file in bam_files:
         logger.debug('Mapping reads from BAM file %s to features', bam_file)
         samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
@@ -140,21 +139,29 @@ def bld_atac_mtx(
                 start, end = read.pos, read.pos + read.query_length
                 barcode = get_barcode_from_read(bam_file, read, cb_tag)
 
-                barcode_index = barcode_mapping[barcode]
+                barcode_index = barcode_indexes[barcode]
                 for interval in trees[chrom].find(start, end):
                     feature_index = interval.value
-                    count_matrix[barcode_index, feature_index] += 1
+                    rows.append(barcode_index)
+                    columns.append(feature_index)
         except OSError as e:
             logger.exception('Caught exception while mapping reads to features')
 
     logger.debug('Done mapping reads, building AnnData object')
 
+    count_matrix = scipy.sparse.coo_matrix(
+        (np.ones(len(rows), dtype=int), (rows, columns)),
+        shape=(len(barcode_indexes), feature_df.shape[0]),
+        dtype=np.uint,
+    )
+
     adata = anndata.AnnData(
         X=scipy.sparse.csr_matrix(count_matrix),
-        obs=pd.DataFrame(index=barcodes),
+        obs=pd.DataFrame(index=barcode_indexes.barcodes),
         var=feature_df,
         dtype=np.uint,
     )
+    adata = adata[sorted(barcode_indexes.barcodes), :].copy()
     adata.write_h5ad(output_file_path)
 
     return adata
