@@ -133,7 +133,9 @@ def bld_atac_mtx(
         logger.debug('Mapping reads from BAM file %s to features', bam_file)
         samfile = bs.AlignmentFile(bam_file, mode="rb", check_sq=check_sq)
         try:
-            for read in samfile:
+            for i, read in enumerate(samfile):
+                if not i % 100_000:
+                    logger.debug('Processed %d reads', i)
                 chrom = removeprefix(read.reference_name, 'chr')
                 if chrom not in trees:
                     continue
