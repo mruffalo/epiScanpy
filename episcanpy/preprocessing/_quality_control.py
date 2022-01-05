@@ -130,7 +130,7 @@ def binarize(adata, copy=False):
 def coverage_cells(
     adata: ad.AnnData,
     key_added='nb_features',
-    log: Union[bool, str] = False,
+    log: Union[bool, int, str] = False,
     binary: Optional[bool] = None,
     threshold=None,
     bw=0.5,
@@ -233,7 +233,7 @@ def coverage_cells(
 def coverage_features(
     adata: ad.AnnData,
     binary: Optional[bool] = None,
-    log: Union[bool, str] = False,
+    log: Union[bool, int, str] = False,
     key_added='commonness',
     threshold=None,
     bw=0.5,
@@ -525,7 +525,11 @@ def density_features(adata,
 
 
 
-def variability_features(adata, min_score=None, nb_features=None, show=True,
+def variability_features(
+    adata,
+    min_score=None,
+    nb_features=None,
+    show=True,
                          title=None,
                          log=None,
                          xlabel='ranked features',
@@ -551,7 +555,6 @@ def variability_features(adata, min_score=None, nb_features=None, show=True,
     show: default value True
 
     save: if specified, save the figure.
-
     """
     #fig = plt.figure(figsize=figsize)
     # calculate variability score
@@ -560,26 +563,26 @@ def variability_features(adata, min_score=None, nb_features=None, show=True,
     var_annot = adata.var.sort_values(ascending=False, by ='variability_score')
     all_feature = [n for n in range(1, len(var_annot)+1)]
     # add log scale
-    if log != None:
+    if log is not None:
         if log=='log2':
             all_feature = np.log2(all_feature)
             xlabel = xlabel + ' (log2)'
-            if nb_features != None:
+            if nb_features is not None:
                 nb_features = np.log2(nb_features)
         elif log=='log10':
             all_feature = np.log10(all_feature)
             xlabel = xlabel + ' (log10)'
-            if nb_features != None:
+            if nb_features is not None:
                 nb_features = np.log10(nb_features)
         else:
             warn("invalid log option. Accepted log scales are 'log2' and 'log10'.")
 
     # add min_score threshold
-    if min_score != None:
+    if min_score is not None:
         plt.axhline(min_score, color='r', linestyle='--')
 
     # add nb_features threshold
-    if nb_features != None:
+    if nb_features is not None:
         plt.axvline(nb_features, color='r', linestyle='--')
 
     plt.plot(all_feature, var_annot.variability_score)
@@ -588,10 +591,11 @@ def variability_features(adata, min_score=None, nb_features=None, show=True,
     plt.ylabel(ylabel)
     plt.title(title)
 
-    if save != None:
-        #fig.savefig(save, dpi=save_dpi)
+    if save is not None:
         plt.savefig(save, bbox_inches="tight")
-    plt.show()
-    #return(var_annot)
+    if show:
+        plt.show()
+
+    return var_annot
 
 
