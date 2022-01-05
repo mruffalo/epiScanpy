@@ -12,7 +12,7 @@ networkx
 natsort
 joblib
 numba>=0.50.0
-numpy>=1.21.2
+numpy>=1.20
 bamnostic>=1.0.12
 umap-learn>=0.3.10
 tqdm
