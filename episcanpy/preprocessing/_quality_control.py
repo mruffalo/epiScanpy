@@ -1,11 +1,12 @@
+from pathlib import Path
 from typing import Optional, Union
 import warnings
 from warnings import warn
 
 import anndata as ad
-import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 from scipy.sparse import issparse
 from scipy.stats.stats import pearsonr, spearmanr
 
@@ -138,7 +139,7 @@ def coverage_cells(
     ylabel='number of cells',
     title: Optional[str] = None,
     color='c', edgecolor='k',
-    save=None,
+    save: Optional[Union[str, Path]] = None,
     show=False,
 ):
     """
@@ -230,19 +231,19 @@ def coverage_cells(
     adata.obs[key_added] = sum_peaks
 
 def coverage_features(
-    adata,
-    binary=None,
-    log=False,
+    adata: ad.AnnData,
+    binary: Optional[bool] = None,
+    log: Union[bool, str] = False,
     key_added='commonness',
     threshold=None,
     bw=0.5,
     bins=50,
     xlabel='number of cells sharing a feature',
     ylabel='number of features',
-    title=None,
+    title: Optional[str] =None,
     color='c',
     edgecolor='k',
-    save=None,
+    save: Optional[Union[str, Path]] = None,
     show=False,
 ):
     """
