@@ -1,12 +1,11 @@
-import seaborn as sns
-import matplotlib.pyplot as plt
-import matplotlib.axes as pltax
-import numpy as np
-import anndata as ad
-
+from typing import Optional, Union
 import warnings
 from warnings import warn
 
+import anndata as ad
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
 from scipy.sparse import issparse
 from scipy.stats.stats import pearsonr, spearmanr
 
@@ -134,23 +133,21 @@ def binarize(adata, copy=False):
     else:
         adata.X[adata.X != 0] = 1
 
-
-
-def coverage_cells(adata,
-                   key_added=None,
-                   log=False,
-                   binary=None,
-                   ## threshold
-                   threshold=None,
-                   bw=0.5,
-                   ## plotting
-                   bins=50,
-                   xlabel=None, ylabel=None, title=None,
-                   #figsize=(15,10),
-                   #save_dpi=250,
-                   color=None, edgecolor=None,
-                   ## sving
-                   save=None):
+def coverage_cells(
+    adata: ad.AnnData,
+    key_added='nb_features',
+    log: Union[bool, str] = False,
+    binary: Optional[bool] = None,
+    threshold=None,
+    bw=0.5,
+    bins=50,
+    xlabel='number of open features per cell',
+    ylabel='number of cells',
+    title: Optional[str] = None,
+    color='c', edgecolor='k',
+    save=None,
+    show=False,
+):
     """
     Histogram of the number of open features (in the case of ATAC-seq data) per cell.
 
@@ -176,12 +173,10 @@ def coverage_cells(adata,
     save
 
     """
-    if key_added == None:
-        key_added='nb_features'
-
     # calculate the number of features per cell
-    if binary==None:
-        warnings.warn("""The argument binary was not specified. To reduce computing time, you can specify if the matrix is already binary""")
+    if binary is None:
+        warnings.warn(
+            """The argument binary was not specified. To reduce computing time, you can specify if the matrix is already binary""")
     if binary:
         sum_peaks = np.sum(adata.X, axis=1).tolist()
     else:
@@ -193,65 +188,52 @@ def coverage_cells(adata,
 
     adata.obs[key_added] = sum_peaks
 
-    #fig = plt.figure(figsize=figsize)
+    # fig = plt.figure(figsize=figsize)
     # plotting settings
-    if xlabel ==None:
-        plt.xlabel('number of open features per cell ')
-    else:
-        plt.xlabel(xlabel)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
 
-    if ylabel ==None:
-        plt.ylabel('number of cells')
-    else:
-        plt.ylabel(ylabel)
-
-    if title !=None:
+    if title is not None:
         plt.title(title)
 
-    if color == None:
-        color='c'
-    if edgecolor == None:
-        edgecolor='k'
-
-    bw_param = bw
     sns.set_style('whitegrid')
 
     ### Potential log scale
-    if log!=False:
+    if log is not False:
         if 0 in sum_peaks:
-            warnings.warn("""Some cells do not contain any open feature. Use epi.pp.filter_cells(adata, max_features=1) to remove these cells.""")
+            warnings.warn(
+                """Some cells do not contain any open feature. Use epi.pp.filter_cells(adata, max_features=1) to remove these cells.""")
 
-        if log=='log2':
+        if log == 'log2':
             plt.xlabel('number of open features per cell (log2)')
             fig = plt.hist(np.log2(sum_peaks), bins, color=color, edgecolor=edgecolor)
-            if threshold != None:
+            if threshold is not None:
                 plt.axvline(x=np.log2(threshold), color='r', linestyle='--')
-        elif log=='log1p':
+        elif log == 'log1p':
             plt.xlabel('number of open features per cell (log1p)')
             fig = plt.hist(np.log1p(sum_peaks), bins, color=color, edgecolor=edgecolor)
-            if threshold != None:
+            if threshold is not None:
                 plt.axvline(x=np.log1p(threshold), color='r', linestyle='--')
-        elif log=='log':
+        elif log == 'log':
             plt.xlabel('number of open features per cell (log natural base e)')
             fig = plt.hist(np.log(sum_peaks), bins, color=color, edgecolor=edgecolor)
-            if threshold != None:
+            if threshold is not None:
                 plt.axvline(x=np.log(threshold), color='r', linestyle='--')
         else:
             plt.xlabel('number of open features per cell (log10)')
             fig = plt.hist(np.log10(sum_peaks), bins, color=color, edgecolor=edgecolor)
-            if threshold != None:
+            if threshold is not None:
                 plt.axvline(x=np.log10(threshold), color='r', linestyle='--')
 
     else:
         fig = plt.hist(sum_peaks, bins, color=color, edgecolor=edgecolor)
-        if threshold != None:
+        if threshold is not None:
             plt.axvline(x=threshold, color='r', linestyle='--')
 
-
-    if save!= None:
-        #fig.savefig(save, dpi=save_dpi)
+    if save is not None:
         plt.savefig(save, bbox_inches="tight")
-    plt.show()
+    if show:
+        plt.show()
     adata.obs[key_added] = sum_peaks
 
 def coverage_features(adata,
