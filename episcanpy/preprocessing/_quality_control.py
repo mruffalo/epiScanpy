@@ -36,25 +36,18 @@ def cal_var(adata, show=True, color=['b', 'r'], save=None):
         adata.var['prop_shared_cells'] = adata.var['n_cells']/len(adata.obs_names.tolist())
         adata.var['variability_score'] = [1-abs(n-0.5) for n in adata.var['prop_shared_cells']]
 
-    if save!= None:
-        fig, axs = plt.subplots(ncols=2)
-        plt.subplots_adjust(wspace=0.7)
+    fig, axs = plt.subplots(ncols=2)
+    plt.subplots_adjust(wspace=0.7)
 
-        ax0 = sns.distplot(adata.var['prop_shared_cells'], bins=40, ax=axs[0], color=color[0])
-        ax0.set(xlabel='cells sharing a feature', ylabel='density')
-        ax1 = sns.distplot(adata.var['variability_score'], bins=40, ax=axs[1], color=color[1])
-        ax1.set(xlabel='variability score', ylabel='density')
+    ax0 = sns.distplot(adata.var['prop_shared_cells'], bins=40, ax=axs[0], color=color[0])
+    ax0.set(xlabel='cells sharing a feature', ylabel='density')
+    ax1 = sns.distplot(adata.var['variability_score'], bins=40, ax=axs[1], color=color[1])
+    ax1.set(xlabel='variability score', ylabel='density')
+
+    if save is not None:
         plt.savefig(save, bbox_inches="tight")
-        show = False
 
-    if show: # plotting
-        fig, axs = plt.subplots(ncols=2)
-        plt.subplots_adjust(wspace=0.7)
-
-        ax0 = sns.distplot(adata.var['prop_shared_cells'], bins=40, ax=axs[0], color=color[0])
-        ax0.set(xlabel='cells sharing a feature', ylabel='density')
-        ax1 = sns.distplot(adata.var['variability_score'], bins=40, ax=axs[1], color=color[1])
-        ax1.set(xlabel='variability score', ylabel='density')
+    if show:
         plt.show()
 
 def select_var_feature(adata, min_score=0.5, nb_features=None, show=True, copy=False, save=None):
