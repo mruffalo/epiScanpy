@@ -229,19 +229,22 @@ def coverage_cells(
         plt.show()
     adata.obs[key_added] = sum_peaks
 
-def coverage_features(adata,
-                        binary=None,
-                        log=False,
-                        key_added=None,
-                        threshold=None,
-                        bw=0.5,
-                        bins=50,
-                        xlabel=None, ylabel=None, title=None,
-                        #figsize=(15,10),
-                        #save_dpi=250,
-                        color=None, edgecolor=None,
-                        save=None):
-
+def coverage_features(
+    adata,
+    binary=None,
+    log=False,
+    key_added='commonness',
+    threshold=None,
+    bw=0.5,
+    bins=50,
+    xlabel='number of cells sharing a feature',
+    ylabel='number of features',
+    title=None,
+    color='c',
+    edgecolor='k',
+    save=None,
+    show=False,
+):
     """
     Display how often a feature is measured as open (for ATAC-seq).
     Distribution of the feature commoness in cells.
@@ -258,15 +261,13 @@ def coverage_features(adata,
     title
     color
     edgecolor
+    show
 
     """
-
-    if key_added == None:
-        key_added='commonness'
-
     # calculate for each feature in how many cell it is open
-    if binary==None:
-        warnings.warn("""The argument binary was not specified. To reduce computing time, you can specify if the matrix is already binary""")
+    if binary is None:
+        warnings.warn(
+            """The argument binary was not specified. To reduce computing time, you can specify if the matrix is already binary""")
     if binary:
         common = np.sum(adata.X, axis=0).tolist()
     else:
@@ -277,70 +278,56 @@ def coverage_features(adata,
         common = common[0]
     adata.var[key_added] = common
 
-    #fig = plt.figure(figsize=figsize)
+    # fig = plt.figure(figsize=figsize)
     ### plotting settings
-    if xlabel ==None:
-        plt.xlabel('number of cells sharing a feature')
-    else:
-        plt.xlabel(xlabel)
-    if ylabel ==None:
-        plt.ylabel('number of features')
-    else:
-        plt.ylabel(ylabel)
-    if title !=None:
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if title is not None:
         plt.title(title)
 
     bw_param = bw
     sns.set_style('whitegrid')
 
-    if color == None:
-        color='c'
-    if edgecolor == None:
-        edgecolor='k'
-
-
     ### Potential log scale
-    if log !=False:
+    if log is not False:
         if 0 in common:
-            warnings.warn("""Some features are not open in any cell. Use epi.pp.filter_features(adata, max_cells=1) to remove these features.""")
+            warnings.warn(
+                """Some features are not open in any cell. Use epi.pp.filter_features(adata, max_cells=1) to remove these features.""")
 
         # different potential bases for log transfo
-        if log=='log2':
+        if log == 'log2':
             plt.xlabel('number of cells sharing a feature (log2)')
             fig = plt.hist(np.log2(common), bins, color=color, edgecolor=edgecolor)
-            if threshold != None:
+            if threshold is not None:
                 plt.axvline(x=np.log2(threshold), color='r', linestyle='--')
-        elif log=='log1p':
+        elif log == 'log1p':
             plt.xlabel('number of cells sharing a feature (log1p)')
             fig = plt.hist(np.log1p(common), bins, color=color, edgecolor=edgecolor)
-            if threshold != None:
+            if threshold is not None:
                 plt.axvline(x=np.log1p(threshold), color='r', linestyle='--')
-        elif log=='log':
+        elif log == 'log':
             plt.xlabel('number of cells sharing a feature (log natural base e)')
             fig = plt.hist(np.log(common), bins, color=color, edgecolor=edgecolor)
-            if threshold != None:
+            if threshold is not None:
                 plt.axvline(x=np.log(threshold), color='r', linestyle='--')
         else:
             plt.xlabel('number of cells sharing a feature (log10)')
             fig = plt.hist(np.log10(common), bins, color=color, edgecolor=edgecolor)
-            if threshold != None:
+            if threshold is not None:
                 plt.axvline(x=np.log10(threshold), color='r', linestyle='--')
 
     else:
         fig = plt.hist(common, bins=int(80), color=color, edgecolor=edgecolor)
-        if threshold != None:
-                plt.axvline(x=threshold, color='r', linestyle='--')
+        if threshold is not None:
+            plt.axvline(x=threshold, color='r', linestyle='--')
 
-
-    if save!= None:
-        #fig.savefig(save, dpi=save_dpi)
+    if save is not None:
         plt.savefig(save, bbox_inches="tight")
-    plt.show()
+
+    if show:
+        plt.show()
 
     adata.var[key_added] = common
-
-
-
 
 
 def correlation_pc(adata,
